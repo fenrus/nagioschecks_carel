@@ -35,7 +35,7 @@ my ($session, $error) = get_snmp_session($ip, $community);	# Open an SNMP connec
 my %explained = (
 	5 => 'Testalarm',
 	14 => 'Air flow switch',
-	15 => 'High pressure from probe',
+	15 => 'Emergency chiller',
 	18 => 'Maintainance alarm',
 	19 => 'Phase-sequency-alarm',
 	26 => 'Prealarm high temp ambient air',
@@ -47,6 +47,9 @@ my %explained = (
 	34 => 'Low temp ambient air',
 	50 => 'Sum of all alarms',
 );
+
+# if 15 (high pressure from probe) is active the emergency cooler is running
+# if 30 is active the emergency cooler can not run
 
 my $oid_base = "1.3.6.1.4.1.9839.2.1.1."; 		# OID base for all digital i/o's
 my $oid = $oid_base.$num.".0";
