@@ -5,52 +5,51 @@
 #
 # Script to check snmp stuff on Chiller web interface card.
 # Carel pCOWeb, FW A1.4.9 - B1.2.4
-# 
-# 
+#
+#
 
 use strict;
 use Net::SNMP;
+
+# Initialize variables....
+my $net_snmp_debug_level = 0x0;                                 # See http://search.cpan.org/~dtown/Net-SNMP-v6.0.1/lib/Net/SNMP.pm#debug()_-_set_or_get_the_debug_mode_for_the_module
+#my $net_snmp_debug_level = 0x08;                                       # massa debugging
+
+my %status = (  'UNKNOWN'  => '3',                              # Enumeration for the output Nagios states
+                                'OK'       => '0',
+                                'WARNING'  => '1',
+                                'CRITICAL' => '2' );
 
 # Check for proper args....
 if ($#ARGV <= 0){
   &print_help();
 }
 
-# Initialize variables....
-my $net_snmp_debug_level = 0x0;					# See http://search.cpan.org/~dtown/Net-SNMP-v6.0.1/lib/Net/SNMP.pm#debug()_-_set_or_get_the_debug_mode_for_the_module
-#my $net_snmp_debug_level = 0x08;					# massa debugging
-
-my %status = (	'UNKNOWN'  => '-1',				# Enumeration for the output Nagios states
-				'OK'       => '0',
-				'WARNING'  => '1',
-				'CRITICAL' => '2' );
-
-my ($ip, $community, $warn, $crit) = pars_args();		# Parse out the arguments...
-my ($session, $error) = get_snmp_session($ip, $community);	# Open an SNMP connection...
-my $oid_ambientair = ".1.3.6.1.4.1.9839.2.1.2.2.0"; 		# Location of ambient air temperature in carel card
+my ($ip, $community, $oid_temperature, $warn, $crit) = pars_args();             # Parse out the arguments...
+my ($session, $error) = get_snmp_session($ip, $community);      # Open an SNMP connection...
 my $string_errors="";
 
 # values fetched with snmp is *10. we divide by 10 here to get correct temperature.
-my $temp_ambient = get_snmp_value($session, $oid_ambientair) / 10;
+my $temp = get_snmp_value($session, $oid_temperature) / 10;
 
 # Close the connection
-close_snmp_session($session);  
+close_snmp_session($session);
 
 my $state="";
 my $unitstate="OK";
-	
-if ($temp_ambient >= $warn)
+
+if ($temp >= $warn)
 {
-	$unitstate="WARNING";  
+        $unitstate="WARNING";
 }
-if ($temp_ambient >= $crit)
+if ($temp >= $crit)
 {
-	$unitstate="CRITICAL";  
+        $unitstate="CRITICAL";
 }
 
 
 # Write an output string...
-my $string = "Current ambient air temperature is ".$unitstate.": " . $temp_ambient; 
+my $string = $unitstate . ": Current temperature is " . $temp . ' | temperature=' . $temp;
 
 #Emit the output and exit with a return code matching the state...
 print $string."\n";
@@ -68,24 +67,28 @@ sub get_snmp_session{
              -port      => 161,
              -timeout   => 1,
              -retries   => 3,
-			 -debug		=> $net_snmp_debug_level,
-			 -version	=> 2,
-             -translate => [-timeticks => 0x0] 
+                         -debug         => $net_snmp_debug_level,
+                         -version       => 2,
+             -translate => [-timeticks => 0x0]
               );
   return ($session, $error);
 }
 
 sub close_snmp_session{
   my $session = $_[0];
-  
+
   $session->close();
 }
 
 sub get_snmp_value{
-	my $session = $_[0];
-	my $oid     = $_[1];
-	my (%result) = %{get_snmp_request($session, $oid) or die ("SNMP service is not available on ".$ip) }; 
-	return $result{$oid};
+        my $session = $_[0];
+        my $oid     = $_[1];
+        my (%result) = %{get_snmp_request($session, $oid) or do {
+                print "CRITICAL: Cannot get SNMP value from $ip\n";
+                exit($status{'CRITICAL'});
+                }
+        };
+        return $result{$oid};
 }
 
 sub get_snmp_request{
@@ -98,41 +101,49 @@ sub get_snmp_request{
 sub get_snmp_table{
   my $session = $_[0];
   my $oid     = $_[1];
-  return $session->get_table(	
-					-baseoid =>$oid
-					); 
+  return $session->get_table(
+                                        -baseoid =>$oid
+                                        );
 }
 
 sub pars_args
 {
   my $ip        = "";
-  my $community = "public"; 
-  my $warn		= "30";
-  my $crit		= "35";
+  my $community = "public";
+  my $oid_temperature = ".1.3.6.1.4.1.9839.2.1.2.2.0";          # Location of temperature in carel card
+  my $warn              = "30";
+  my $crit              = "35";
   while(@ARGV)
   {
-    if($ARGV[0] =~/^-H|^--host/) 
+    if($ARGV[0] =~/^-H|^--host/)
     {
       $ip = $ARGV[1];
       shift @ARGV;
       shift @ARGV;
       next;
     }
-    if($ARGV[0] =~/^-C|^--community/) 
+    if($ARGV[0] =~/^-C|^--community/)
     {
       $community = $ARGV[1];
       shift @ARGV;
       shift @ARGV;
       next;
     }
-    if($ARGV[0] =~/^-w|^--warn/) 
+    if($ARGV[0] =~/^-o|^--oid/)
+    {
+      $oid_temperature = $ARGV[1];
+      shift @ARGV;
+      shift @ARGV;
+      next;
+    }
+    if($ARGV[0] =~/^-w|^--warn/)
     {
       $warn = $ARGV[1];
       shift @ARGV;
       shift @ARGV;
       next;
     }
-    if($ARGV[0] =~/^-c|^--crit/) 
+    if($ARGV[0] =~/^-c|^--crit/)
     {
       $crit = $ARGV[1];
       shift @ARGV;
@@ -140,8 +151,8 @@ sub pars_args
       next;
     }
   }
-  return ($ip, $community, $warn, $crit); 
-} 
+  return ($ip, $community, $oid_temperature, $warn, $crit);
+}
 
 sub print_help() {
   print "Usage: check_carel_temp -H host -C community -w 35 -c 40 \n";
@@ -150,8 +161,9 @@ sub print_help() {
   print "   Check temperatures on the indicated host.\n";
   print " -C --community STRING\n";
   print "   Community-String for SNMP. (default public)\n";
+  print " -o --oid OID for temperature (default .1.3.6.1.4.1.9839.2.1.2.2.0)\n";
   print " -w --warn NAGIOS warn level in degrees centigrade (default 30)\n";
   print " -c --crit NAGIOS crit level in degrees centigrade (default 35)\n";
-  
-  exit($status{"UNKNOWN"});
+
+  exit($status{'UNKNOWN'});
 }
