@@ -113,8 +113,10 @@ sub pars_args
   my $oid_temperature = ".1.3.6.1.4.1.9839.2.1.2.2.0";          # Location of temperature in carel card
   my $warn              = "30";
   my $crit              = "35";
-  while(@ARGV)
+  my $loop = 0;         # Loop protection
+  while(@ARGV && $loop < 30)
   {
+    $loop++;
     if($ARGV[0] =~/^-H|^--host/)
     {
       $ip = $ARGV[1];
